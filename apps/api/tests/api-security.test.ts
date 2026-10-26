@@ -13,6 +13,7 @@ import {
 import { createApp } from '../src/app.js';
 import { MockTokenVerifier } from '../src/services/token-verifier.js';
 import { InMemoryAuditLogger } from '../src/services/audit-logger.js';
+import { InMemoryUserService } from '../src/services/user-service.js';
 
 // In-memory mock organization service for hermetic testing
 class TestOrganizationService implements IOrganizationService {
@@ -52,6 +53,7 @@ describe('API Security Middleware Suite', () => {
   let tokenVerifier: MockTokenVerifier;
   let authzEngine: AuthorizationEngine;
   let orgService: TestOrganizationService;
+  let userService: InMemoryUserService;
   let auditLogger: InMemoryAuditLogger;
 
   const validToken = 'valid-test-token-uuid-1';
@@ -63,6 +65,7 @@ describe('API Security Middleware Suite', () => {
     tokenVerifier = new MockTokenVerifier();
     authzEngine = new AuthorizationEngine();
     orgService = new TestOrganizationService();
+    userService = new InMemoryUserService();
     auditLogger = new InMemoryAuditLogger();
 
     // Register a valid token for user-uuid-100
@@ -75,10 +78,14 @@ describe('API Security Middleware Suite', () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
 
+    // Default: normal user has a profile in public.users with platformRole: null
+    userService.setUser(userId, 'user@example.com', null);
+
     app = createApp({
       tokenVerifier,
       authzEngine,
       orgService,
+      userService,
       auditLogger,
       authRateLimitMax: 3, // Low limit to test rate limiting quickly
     });
@@ -147,7 +154,7 @@ describe('API Security Middleware Suite', () => {
 
   describe('Platform Role Isolation', () => {
     it('rejects regular users lacking a platform role from platform metrics (403)', async () => {
-      // User has no platform role
+      // User has no platform role in database
       const response = await request(app)
         .get('/api/v1/platform/metrics')
         .set('Authorization', `Bearer ${validToken}`);
@@ -156,42 +163,117 @@ describe('API Security Middleware Suite', () => {
       expect(response.body.error.code).toBe('FORBIDDEN');
     });
 
-    it('allows users with platform role Developer to access platform metrics', async () => {
-      const devToken = 'dev-token-uuid';
-      tokenVerifier.registerToken(devToken, {
-        sub: 'dev-user-id',
-        email: 'dev@company.com',
+    it('allows Superadmin to access both platform metrics and system settings (database resolved)', async () => {
+      const superadminToken = 'superadmin-token-uuid';
+      const superadminUserId = 'superadmin-uuid-1';
+
+      tokenVerifier.registerToken(superadminToken, {
+        sub: superadminUserId,
+        email: 'superadmin.modularauth@gmail.com',
         iss: 'https://example.supabase.co/auth/v1',
         aud: 'authenticated',
         iat: Math.floor(Date.now() / 1000),
         exp: Math.floor(Date.now() / 1000) + 3600,
-        platform_role: PlatformRoles.DEVELOPER,
       });
 
-      const response = await request(app)
-        .get('/api/v1/platform/metrics')
-        .set('Authorization', `Bearer ${devToken}`);
+      // Role explicitly assigned in trusted database
+      userService.setUser(superadminUserId, 'superadmin.modularauth@gmail.com', PlatformRoles.SUPER_ADMIN);
 
-      expect(response.status).toBe(200);
-      expect(response.body.scope).toBe('platform');
-      expect(response.body.userRole).toBe(PlatformRoles.DEVELOPER);
+      // Access metrics
+      const metricsRes = await request(app)
+        .get('/api/v1/platform/metrics')
+        .set('Authorization', `Bearer ${superadminToken}`);
+      expect(metricsRes.status).toBe(200);
+      expect(metricsRes.body.userRole).toBe(PlatformRoles.SUPER_ADMIN);
+
+      // Access system settings
+      const settingsRes = await request(app)
+        .get('/api/v1/platform/system-settings')
+        .set('Authorization', `Bearer ${superadminToken}`);
+      expect(settingsRes.status).toBe(200);
+      expect(settingsRes.body.version).toBe('1.0.0');
     });
 
-    it('restricts system settings to Founder only (Developer receives 403)', async () => {
-      const devToken = 'dev-token-uuid-2';
-      tokenVerifier.registerToken(devToken, {
-        sub: 'dev-user-id-2',
-        email: 'dev2@company.com',
+    it('allows Admin to access platform metrics but blocks access to system settings (403)', async () => {
+      const adminToken = 'admin-token-uuid';
+      const adminUserId = 'admin-uuid-2';
+
+      tokenVerifier.registerToken(adminToken, {
+        sub: adminUserId,
+        email: 'admin.modularauth@gmail.com',
         iss: 'https://example.supabase.co/auth/v1',
         aud: 'authenticated',
         iat: Math.floor(Date.now() / 1000),
         exp: Math.floor(Date.now() / 1000) + 3600,
-        platform_role: PlatformRoles.DEVELOPER,
       });
 
-      const response = await request(app)
+      // Role explicitly assigned in trusted database
+      userService.setUser(adminUserId, 'admin.modularauth@gmail.com', PlatformRoles.ADMIN);
+
+      // Allowed to view metrics
+      const metricsRes = await request(app)
+        .get('/api/v1/platform/metrics')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(metricsRes.status).toBe(200);
+      expect(metricsRes.body.userRole).toBe(PlatformRoles.ADMIN);
+
+      // Blocked from system settings (Superadmin / Founder only)
+      const settingsRes = await request(app)
         .get('/api/v1/platform/system-settings')
-        .set('Authorization', `Bearer ${devToken}`);
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(settingsRes.status).toBe(403);
+      expect(settingsRes.body.error.code).toBe('FORBIDDEN');
+    });
+
+    it('allows Superadmin to update another user platform role in database (200)', async () => {
+      const superadminToken = 'superadmin-token-uuid-3';
+      const superadminId = 'superadmin-uuid-3';
+      const targetUserId = 'target-user-uuid-999';
+
+      tokenVerifier.registerToken(superadminToken, {
+        sub: superadminId,
+        email: 'superadmin.modularauth@gmail.com',
+        iss: 'https://example.supabase.co/auth/v1',
+        aud: 'authenticated',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      userService.setUser(superadminId, 'superadmin.modularauth@gmail.com', PlatformRoles.SUPER_ADMIN);
+      userService.setUser(targetUserId, 'target@example.com', null);
+
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${targetUserId}/role`)
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.newRole).toBe('admin');
+
+      // Verify the role was updated in database
+      const updatedProfile = await userService.getUserProfile(targetUserId);
+      expect(updatedProfile?.platformRole).toBe(PlatformRoles.ADMIN);
+    });
+
+    it('blocks non-superadmin from updating a user platform role (403)', async () => {
+      const regularAdminToken = 'admin-token-uuid-4';
+      const regularAdminId = 'admin-uuid-4';
+      const targetUserId = 'target-user-uuid-888';
+
+      tokenVerifier.registerToken(regularAdminToken, {
+        sub: regularAdminId,
+        email: 'admin.modularauth@gmail.com',
+        iss: 'https://example.supabase.co/auth/v1',
+        aud: 'authenticated',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      userService.setUser(regularAdminId, 'admin.modularauth@gmail.com', PlatformRoles.ADMIN);
+      userService.setUser(targetUserId, 'target2@example.com', null);
+
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${targetUserId}/role`)
+        .set('Authorization', `Bearer ${regularAdminToken}`)
+        .send({ role: 'developer' });
 
       expect(response.status).toBe(403);
       expect(response.body.error.code).toBe('FORBIDDEN');

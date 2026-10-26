@@ -22,12 +22,14 @@ describe('AuthorizationEngine', () => {
 
   describe('Type Guards', () => {
     it('correctly validates platform roles', () => {
+      expect(isPlatformRole('superadmin')).toBe(true);
+      expect(isPlatformRole('admin')).toBe(true);
       expect(isPlatformRole('founder')).toBe(true);
       expect(isPlatformRole('developer')).toBe(true);
       expect(isPlatformRole('client_servicing')).toBe(true);
       expect(isPlatformRole('accounts')).toBe(true);
       expect(isPlatformRole('business_owner')).toBe(false);
-      expect(isPlatformRole('superadmin')).toBe(false);
+      expect(isPlatformRole('unknown_role')).toBe(false);
     });
 
     it('correctly validates organization roles', () => {
@@ -39,11 +41,25 @@ describe('AuthorizationEngine', () => {
       expect(isOrgRole('collaborator')).toBe(true);
       expect(isOrgRole('guest')).toBe(true);
       expect(isOrgRole('founder')).toBe(false);
-      expect(isOrgRole('admin')).toBe(false);
+      expect(isOrgRole('superadmin')).toBe(false);
     });
   });
 
   describe('Platform Role Permissions', () => {
+    it('grants superadmin full platform access', () => {
+      expect(engine.hasPlatformPermission(PlatformRoles.SUPER_ADMIN, StandardPermissions.PLATFORM_MANAGE_ALL)).toBe(true);
+      expect(engine.hasPlatformPermission(PlatformRoles.SUPER_ADMIN, StandardPermissions.PLATFORM_MANAGE_USERS)).toBe(true);
+      expect(engine.hasPlatformPermission(PlatformRoles.SUPER_ADMIN, StandardPermissions.PLATFORM_VIEW_SYSTEM)).toBe(true);
+      expect(engine.hasPlatformPermission(PlatformRoles.SUPER_ADMIN, StandardPermissions.PLATFORM_BILLING_AUDIT)).toBe(true);
+    });
+
+    it('grants admin operational platform permissions but restricts total platform management', () => {
+      expect(engine.hasPlatformPermission(PlatformRoles.ADMIN, StandardPermissions.PLATFORM_MANAGE_USERS)).toBe(true);
+      expect(engine.hasPlatformPermission(PlatformRoles.ADMIN, StandardPermissions.PLATFORM_VIEW_SYSTEM)).toBe(true);
+      expect(engine.hasPlatformPermission(PlatformRoles.ADMIN, StandardPermissions.PLATFORM_VIEW_METRICS)).toBe(true);
+      expect(engine.hasPlatformPermission(PlatformRoles.ADMIN, StandardPermissions.PLATFORM_MANAGE_ALL)).toBe(false);
+    });
+
     it('grants founder full platform access', () => {
       expect(engine.hasPlatformPermission(PlatformRoles.FOUNDER, StandardPermissions.PLATFORM_MANAGE_ALL)).toBe(true);
       expect(engine.hasPlatformPermission(PlatformRoles.FOUNDER, StandardPermissions.PLATFORM_MANAGE_USERS)).toBe(true);

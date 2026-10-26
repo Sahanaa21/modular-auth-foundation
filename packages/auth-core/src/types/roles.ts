@@ -6,6 +6,8 @@
  * permissions automatically unless explicitly mapped and audited.
  */
 export const PlatformRoles = {
+  SUPER_ADMIN: 'superadmin',
+  ADMIN: 'admin',
   FOUNDER: 'founder',
   DEVELOPER: 'developer',
   CLIENT_SERVICING: 'client_servicing',

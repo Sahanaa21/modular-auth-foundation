@@ -12,6 +12,22 @@ import {
  * Platform roles have zero access to organization resources unless explicitly audited.
  */
 export const DEFAULT_PLATFORM_PERMISSIONS: PlatformPermissionMatrix = {
+  [PlatformRoles.SUPER_ADMIN]: [
+    StandardPermissions.PLATFORM_MANAGE_ALL,
+    StandardPermissions.PLATFORM_VIEW_SYSTEM,
+    StandardPermissions.PLATFORM_MANAGE_USERS,
+    StandardPermissions.PLATFORM_VIEW_METRICS,
+    StandardPermissions.PLATFORM_BILLING_AUDIT,
+    StandardPermissions.PLATFORM_SUPPORT_ACCESS,
+    StandardPermissions.AUDIT_LOG_VIEW,
+  ],
+  [PlatformRoles.ADMIN]: [
+    StandardPermissions.PLATFORM_VIEW_SYSTEM,
+    StandardPermissions.PLATFORM_MANAGE_USERS,
+    StandardPermissions.PLATFORM_VIEW_METRICS,
+    StandardPermissions.PLATFORM_SUPPORT_ACCESS,
+    StandardPermissions.AUDIT_LOG_VIEW,
+  ],
   [PlatformRoles.FOUNDER]: [
     StandardPermissions.PLATFORM_MANAGE_ALL,
     StandardPermissions.PLATFORM_VIEW_SYSTEM,

@@ -17,12 +17,14 @@ import { requireOrgMembership } from './middleware/require-org-membership.js';
 import { requirePermission } from './middleware/require-permission.js';
 import { validateRequest } from './middleware/validate-request.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { IUserService } from './services/user-service.js';
 
 export interface AppDependencies {
   readonly tokenVerifier: ITokenVerifier;
   readonly authzEngine: IAuthorizationEngine;
   readonly orgService: IOrganizationService;
   readonly auditLogger: IAuditLogger;
+  readonly userService?: IUserService;
   readonly corsOrigin?: string;
   readonly rateLimitWindowMs?: number;
   readonly rateLimitMax?: number;
@@ -82,9 +84,15 @@ export function createApp(dependencies: AppDependencies): Express {
     }
   );
 
-  // Common authenticated middleware instance
+  // Common authenticated middleware instance with database-backed user resolver
   const authMiddleware = authenticate({
     tokenVerifier: dependencies.tokenVerifier,
+    userResolver: dependencies.userService
+      ? async (userId) => {
+          const profile = await dependencies.userService!.getUserProfile(userId);
+          return profile ? { platformRole: profile.platformRole } : null;
+        }
+      : undefined,
   });
 
   const tenantMiddleware = requireOrgMembership({
@@ -106,7 +114,14 @@ export function createApp(dependencies: AppDependencies): Express {
   app.get(
     '/api/v1/platform/metrics',
     authMiddleware,
-    requirePlatformRole([PlatformRoles.FOUNDER, PlatformRoles.DEVELOPER, PlatformRoles.CLIENT_SERVICING, PlatformRoles.ACCOUNTS]),
+    requirePlatformRole([
+      PlatformRoles.SUPER_ADMIN,
+      PlatformRoles.ADMIN,
+      PlatformRoles.FOUNDER,
+      PlatformRoles.DEVELOPER,
+      PlatformRoles.CLIENT_SERVICING,
+      PlatformRoles.ACCOUNTS,
+    ]),
     (req, res) => {
       res.status(200).json({
         scope: 'platform',
@@ -119,13 +134,47 @@ export function createApp(dependencies: AppDependencies): Express {
   app.get(
     '/api/v1/platform/system-settings',
     authMiddleware,
-    requirePlatformRole([PlatformRoles.FOUNDER]),
+    requirePlatformRole([PlatformRoles.SUPER_ADMIN, PlatformRoles.FOUNDER]),
     (_req, res) => {
       res.status(200).json({
         scope: 'platform',
         maintenanceMode: false,
         version: '1.0.0',
       });
+    }
+  );
+
+  // Admin route: Superadmin/Founder updates user's platform role
+  app.patch(
+    '/api/v1/platform/users/:targetUserId/role',
+    authMiddleware,
+    requirePlatformRole([PlatformRoles.SUPER_ADMIN, PlatformRoles.FOUNDER]),
+    validateRequest({
+      body: z.object({
+        role: z.enum(['superadmin', 'admin', 'founder', 'developer', 'client_servicing', 'accounts']).nullable(),
+      }),
+    }),
+    async (req, res, next) => {
+      try {
+        if (!dependencies.userService) {
+          res.status(501).json({ error: { code: 'NOT_IMPLEMENTED', message: 'User service not configured' } });
+          return;
+        }
+
+        await dependencies.userService.updatePlatformRole(
+          req.auth?.user.platformRole,
+          req.params.targetUserId,
+          req.body.role
+        );
+
+        res.status(200).json({
+          message: `Platform role updated successfully for user ${req.params.targetUserId}`,
+          targetUserId: req.params.targetUserId,
+          newRole: req.body.role,
+        });
+      } catch (err) {
+        next(err);
+      }
     }
   );
 
