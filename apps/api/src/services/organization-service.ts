@@ -8,22 +8,31 @@ import {
 
 export interface SupabaseOrganizationServiceOptions {
   readonly supabaseUrl: string;
-  readonly serviceRoleKey: string;
+  readonly serviceRoleKey?: string;
+  readonly supabaseClient?: SupabaseClient;
 }
 
 /**
  * Production implementation of IOrganizationService querying Supabase PostgreSQL.
  */
 export class SupabaseOrganizationService implements IOrganizationService {
-  private readonly supabase: SupabaseClient;
+  private readonly supabase?: SupabaseClient;
 
   constructor(options: SupabaseOrganizationServiceOptions) {
-    this.supabase = createClient(options.supabaseUrl, options.serviceRoleKey, {
-      auth: { persistSession: false },
-    });
+    if (options.supabaseClient) {
+      this.supabase = options.supabaseClient;
+    } else if (options.serviceRoleKey) {
+      this.supabase = createClient(options.supabaseUrl, options.serviceRoleKey, {
+        auth: { persistSession: false },
+      });
+    }
   }
 
   public async getUserMemberships(userId: string): Promise<readonly OrganizationMembership[]> {
+    if (!this.supabase) {
+      return [];
+    }
+
     const { data, error } = await this.supabase
       .from('organization_memberships')
       .select(`
@@ -66,6 +75,10 @@ export class SupabaseOrganizationService implements IOrganizationService {
   }
 
   public async getMembership(userId: string, organizationId: string): Promise<OrganizationMembership | null> {
+    if (!this.supabase) {
+      return null;
+    }
+
     const { data, error } = await this.supabase
       .from('organization_memberships')
       .select('id, user_id, organization_id, role, status, created_at')
@@ -88,6 +101,10 @@ export class SupabaseOrganizationService implements IOrganizationService {
   }
 
   public async getOrganizationById(organizationId: string): Promise<Organization | null> {
+    if (!this.supabase) {
+      return null;
+    }
+
     const { data, error } = await this.supabase
       .from('organizations')
       .select('id, name, slug, status, created_at')

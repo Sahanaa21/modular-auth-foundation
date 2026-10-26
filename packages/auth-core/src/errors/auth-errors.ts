@@ -98,3 +98,17 @@ export class ConfigurationError extends AuthBaseError {
     super(message, details);
   }
 }
+
+/**
+ * Thrown when a requested resource (such as a target user) is not found.
+ * Maps to HTTP 404 Not Found.
+ */
+export class NotFoundError extends AuthBaseError {
+  public readonly statusCode = 404;
+  public readonly code = 'NOT_FOUND';
+
+  constructor(message = 'Requested resource not found', details?: Record<string, unknown>) {
+    super(message, details);
+  }
+}
+

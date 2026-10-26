@@ -34,7 +34,7 @@ BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, pg_temp;
 
 -- Re-attach trigger
 DROP TRIGGER IF EXISTS trg_protect_platform_role ON public.users;
@@ -116,7 +116,7 @@ BEGIN
         'role', 'superadmin'
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, pg_temp;
 
 -- 3. Strict Execution Permissions on Bootstrap Function
 -- Revoke all permissions from PUBLIC, anon, and authenticated

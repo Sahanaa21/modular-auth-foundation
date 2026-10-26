@@ -17,7 +17,7 @@
 ```
 +-----------------------------------------------------------------------------------+
 |                                 TRUST BOUNDARY 1                                  |
-|  UNTRUSTED CLIENT ENVIRONMENT (Browser / React Demonstration App: apps/web)      |
+|  UNTRUSTED CLIENT ENVIRONMENT (Web / Mobile / React Consumer Application)         |
 |                                                                                   |
 |   +-----------------------+     +------------------------+                        |
 |   |   Supabase Auth SDK   |     |    Auth State Provider |                        |
@@ -69,7 +69,7 @@
 
 ## 3. Trust Boundaries & Authentication Flow
 
-### Trust Boundary 1: Client Browser (`apps/web`)
+### Trust Boundary 1: Client Application (Browser / Consumer App)
 * **Threat Profile**: Untrusted. Client memory, local storage, and DOM can be inspected, manipulated, or intercepted by scripts or browser extensions.
 * **Security Controls**:
   - Only uses `SUPABASE_ANON_KEY` (public, limited privileges).

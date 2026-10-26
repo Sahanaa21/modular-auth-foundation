@@ -7,6 +7,7 @@ import {
   IAuditLogger,
   StandardPermissions,
   PlatformRoles,
+  AuthorizationError,
 } from '@modular-auth/core';
 import { securityHeaders } from './middleware/security-headers.js';
 import { corsMiddleware } from './middleware/cors.js';
@@ -150,6 +151,9 @@ export function createApp(dependencies: AppDependencies): Express {
     authMiddleware,
     requirePlatformRole([PlatformRoles.SUPER_ADMIN, PlatformRoles.FOUNDER]),
     validateRequest({
+      params: z.object({
+        targetUserId: z.string().uuid('targetUserId must be a valid UUID'),
+      }),
       body: z.object({
         role: z.enum(['superadmin', 'admin', 'founder', 'developer', 'client_servicing', 'accounts']).nullable(),
       }),
@@ -161,16 +165,49 @@ export function createApp(dependencies: AppDependencies): Express {
           return;
         }
 
-        await dependencies.userService.updatePlatformRole(
-          req.auth?.user.platformRole,
-          req.params.targetUserId,
-          req.body.role
+        const actorId = req.auth?.user.id ?? 'unknown';
+        const actorRole = req.auth?.user.platformRole;
+        const targetUserId = req.params.targetUserId;
+        const newRole = req.body.role;
+
+        // Prevent self-modification of privileged platform role to prevent administrative lockout or self-privilege manipulation
+        if (actorId === targetUserId) {
+          await dependencies.auditLogger.logEvent({
+            eventType: 'authz:platform_role_updated',
+            timestamp: new Date(),
+            actorId,
+            resourceId: targetUserId,
+            resourceType: 'user_platform_role',
+            outcome: 'DENIED',
+            reason: 'Self-modification of platform role is forbidden to prevent administrative lockout',
+            metadata: { attemptedRole: newRole },
+          });
+          throw new AuthorizationError('Self-modification of platform role is forbidden to prevent administrative lockout');
+        }
+
+        const result = await dependencies.userService.updatePlatformRole(
+          actorRole,
+          targetUserId,
+          newRole
         );
 
+        await dependencies.auditLogger.logEvent({
+          eventType: 'authz:platform_role_updated',
+          timestamp: new Date(),
+          actorId,
+          resourceId: targetUserId,
+          resourceType: 'user_platform_role',
+          outcome: 'SUCCESS',
+          metadata: {
+            actorRole,
+            persistedRole: result.platformRole,
+          },
+        });
+
         res.status(200).json({
-          message: `Platform role updated successfully for user ${req.params.targetUserId}`,
-          targetUserId: req.params.targetUserId,
-          newRole: req.body.role,
+          message: `Platform role updated successfully for user ${targetUserId}`,
+          targetUserId: result.targetUserId,
+          newRole: result.platformRole,
         });
       } catch (err) {
         next(err);

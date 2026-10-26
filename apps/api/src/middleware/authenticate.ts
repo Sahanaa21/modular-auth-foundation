@@ -39,6 +39,11 @@ export function authenticate(options: AuthenticateMiddlewareOptions): RequestHan
         if (userProfile?.platformRole) {
           platformRole = userProfile.platformRole;
         }
+        console.info('[authenticate] Hydrated platform role for authenticated user:', {
+          userId: claims.sub,
+          hasRole: Boolean(platformRole),
+          resolvedRole: platformRole ?? 'none',
+        });
       }
 
       const user: UserIdentity = {

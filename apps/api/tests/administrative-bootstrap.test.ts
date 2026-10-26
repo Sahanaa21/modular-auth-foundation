@@ -20,15 +20,15 @@ describe('Administrative Provisioning & Bootstrap Suite', () => {
   let userService: InMemoryUserService;
   let auditLogger: InMemoryAuditLogger;
 
-  const superadminId = 'superadmin-uuid-001';
+  const superadminId = 'd6d1bbef-e141-4138-ac74-987070d05527';
   const superadminToken = 'superadmin-bearer-token';
   const superadminEmail = 'superadmin.modularauth@gmail.com';
 
-  const adminId = 'admin-uuid-002';
+  const adminId = 'a800ea5c-667a-424a-aa09-49f6a4a8a222';
   const adminToken = 'admin-bearer-token';
   const adminEmail = 'admin.modularauth@gmail.com';
 
-  const ordinaryUserId = 'ordinary-uuid-003';
+  const ordinaryUserId = '00000000-0000-4000-8000-000000000003';
   const ordinaryToken = 'ordinary-bearer-token';
 
   beforeEach(() => {
@@ -192,5 +192,121 @@ describe('Administrative Provisioning & Bootstrap Suite', () => {
       expect(response.status).toBe(400);
       expect(response.body.error.code).toBe('VALIDATION_ERROR');
     });
+
+    it('allows authenticated Founder to assign an allowed platform role', async () => {
+      const founderId = '00000000-0000-4000-8000-000000000004';
+      const founderToken = 'founder-bearer-token';
+      tokenVerifier.registerToken(founderToken, {
+        sub: founderId,
+        email: 'founder@archscale.com',
+        iss: 'https://example.supabase.co/auth/v1',
+        aud: 'authenticated',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+      userService.setUser(founderId, 'founder@archscale.com', PlatformRoles.FOUNDER);
+
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${adminId}/role`)
+        .set('Authorization', `Bearer ${founderToken}`)
+        .send({ role: 'developer' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.newRole).toBe('developer');
+
+      const adminProfile = await userService.getUserProfile(adminId);
+      expect(adminProfile?.platformRole).toBe(PlatformRoles.DEVELOPER);
+    });
+
+    it('prevents self-modification of platform role to avert administrative lockout (403 Forbidden)', async () => {
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${superadminId}/role`)
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'developer' });
+
+      expect(response.status).toBe(403);
+      expect(response.body.error.code).toBe('FORBIDDEN');
+      expect(response.body.error.message).toContain('Self-modification of platform role is forbidden');
+
+      // Verify audit log recorded the denied self-modification attempt
+      const deniedEvents = auditLogger.events.filter(
+        (e) => e.eventType === 'authz:platform_role_updated' && e.outcome === 'DENIED'
+      );
+      expect(deniedEvents.length).toBeGreaterThan(0);
+      expect(deniedEvents[0].actorId).toBe(superadminId);
+      expect(deniedEvents[0].resourceId).toBe(superadminId);
+    });
+
+    it('rejects invalid target UUID format with 400 Bad Request', async () => {
+      const response = await request(app)
+        .patch('/api/v1/platform/users/not-a-valid-uuid/role')
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.body.error.details[0].field).toBe('targetUserId');
+    });
+
+    it('returns 404 Not Found when attempting to update a missing target user', async () => {
+      const nonExistentUserId = '00000000-0000-4000-8000-000000000999';
+
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${nonExistentUserId}/role`)
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error.code).toBe('NOT_FOUND');
+      expect(response.body.error.message).toContain('not found');
+    });
+
+    it('emits an audit log event with persisted role on successful role update', async () => {
+      auditLogger.clear();
+
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${adminId}/role`)
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(200);
+
+      const auditEvent = auditLogger.events.find(
+        (e) => e.eventType === 'authz:platform_role_updated' && e.outcome === 'SUCCESS'
+      );
+      expect(auditEvent).toBeDefined();
+      expect(auditEvent?.actorId).toBe(superadminId);
+      expect(auditEvent?.resourceId).toBe(adminId);
+      expect(auditEvent?.metadata?.persistedRole).toBe('admin');
+    });
+
+    it('propagates database error as 500 without false success', async () => {
+      // Mock updatePlatformRole to throw database error
+      const mockUserService = {
+        ...userService,
+        getUserProfile: userService.getUserProfile.bind(userService),
+        bootstrapSuperadmin: userService.bootstrapSuperadmin.bind(userService),
+        updatePlatformRole: async () => {
+          throw new Error('Connection pool exhausted: Postgres connection failed');
+        },
+      };
+
+      const failingApp = createApp({
+        tokenVerifier,
+        authzEngine,
+        orgService,
+        userService: mockUserService,
+        auditLogger,
+      });
+
+      const response = await request(failingApp)
+        .patch(`/api/v1/platform/users/${adminId}/role`)
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe('INTERNAL_SERVER_ERROR');
+    });
   });
 });
+

@@ -102,7 +102,7 @@ BEGIN
         updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, pg_temp;
 
 -- Trigger fired after an auth.users record is created
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
@@ -141,7 +141,7 @@ BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, pg_temp;
 
 DROP TRIGGER IF EXISTS trg_protect_platform_role ON public.users;
 CREATE TRIGGER trg_protect_platform_role
@@ -219,7 +219,7 @@ BEGIN
         'role', 'superadmin'
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, auth, pg_temp;
 
 -- Strict execution permissions: only trusted database administrator roles
 REVOKE ALL ON FUNCTION public.bootstrap_initial_superadmin(UUID) FROM PUBLIC, anon, authenticated;

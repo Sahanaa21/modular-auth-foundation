@@ -227,8 +227,8 @@ describe('API Security Middleware Suite', () => {
 
     it('allows Superadmin to update another user platform role in database (200)', async () => {
       const superadminToken = 'superadmin-token-uuid-3';
-      const superadminId = 'superadmin-uuid-3';
-      const targetUserId = 'target-user-uuid-999';
+      const superadminId = 'd6d1bbef-e141-4138-ac74-987070d05527';
+      const targetUserId = '00000000-0000-4000-8000-000000000999';
 
       tokenVerifier.registerToken(superadminToken, {
         sub: superadminId,
@@ -256,8 +256,8 @@ describe('API Security Middleware Suite', () => {
 
     it('blocks non-superadmin from updating a user platform role (403)', async () => {
       const regularAdminToken = 'admin-token-uuid-4';
-      const regularAdminId = 'admin-uuid-4';
-      const targetUserId = 'target-user-uuid-888';
+      const regularAdminId = '00000000-0000-4000-8000-000000000002';
+      const targetUserId = '00000000-0000-4000-8000-000000000888';
 
       tokenVerifier.registerToken(regularAdminToken, {
         sub: regularAdminId,
