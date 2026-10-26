@@ -1,0 +1,32 @@
+{
+  "name": "@modular-auth/core",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Framework-agnostic core authentication contracts, RBAC/PBAC authorization engine, and multi-tenant security primitives",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3",
+    "vitest": "^5.0.5"
+  }
+}
