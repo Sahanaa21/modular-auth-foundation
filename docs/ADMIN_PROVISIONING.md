@@ -22,7 +22,8 @@ Authorization rules must **never** check `if (user.email === 'admin@domain.com')
 1. **Database CHECK Constraint**: Platform roles are validated against `('superadmin', 'admin', 'founder', 'developer', 'client_servicing', 'accounts')`.
 2. **Column Privilege Revocation**: The `platform_role` column cannot be updated by public `authenticated` or `anon` roles via PostgREST/Supabase client.
 3. **Escalation Prevention Trigger**: The PostgreSQL trigger `trg_protect_platform_role` prevents non-superadmins from altering their own or other users' platform roles.
-4. **Fail-Closed Evaluator**: Any unknown role, missing record, or null role defaults to `null` and access is denied (HTTP 403/401).
+4. **Concurrency-Safe One-Time Bootstrap**: `public.bootstrap_initial_superadmin(UUID)` acquires an advisory transaction lock (`pg_advisory_xact_lock`) and verifies that zero superadmins exist before promoting the initial superadmin. It permanently locks itself once executed.
+5. **Fail-Closed Evaluator**: Any unknown role, missing record, or null role defaults to `null` and access is denied (HTTP 403/401).
 
 ---
 
@@ -30,78 +31,96 @@ Authorization rules must **never** check `if (user.email === 'admin@domain.com')
 
 Follow these manual steps to provision the administrative accounts:
 
-### Step 1: Create Identities in Supabase Auth
-You can create the user identities using either the Supabase Studio Dashboard or the Supabase CLI.
+### Step 1: Apply the Bootstrap Migration in Supabase SQL Editor
+Run the migration file [`docs/migrations/001_bootstrap_initial_superadmin.sql`](file:///c:/Users/sahan/OneDrive/Desktop/ArchScale/modular-auth-foundation/docs/migrations/001_bootstrap_initial_superadmin.sql) in the Supabase SQL Editor. This:
+- Updates the trigger `protect_platform_role_escalation` to recognize trusted database administrator roles (`postgres`, `supabase_admin`, `service_role`).
+- Deploys the atomic, concurrency-safe `public.bootstrap_initial_superadmin(UUID)` function.
+- Hardens audit log write permissions.
 
-#### Via Supabase Studio Dashboard:
-1. Navigate to **Authentication &rarr; Users**.
-2. Click **Add user** &rarr; **Send invitation** (or **Create user** with a strong, temporary password).
-3. Enter `superadmin.modularauth@gmail.com`.
-4. Repeat for `admin.modularauth@gmail.com`.
-5. Ensure both accounts complete email verification and set up Multi-Factor Authentication (MFA).
-
-### Step 2: Retrieve the Immutable Supabase User UUIDs
-In the Supabase Studio Dashboard (**Authentication &rarr; Users**) or via SQL query in the Supabase SQL Editor:
+### Step 2: Retrieve the Superadmin Supabase UUID
+In the **Supabase SQL Editor**:
 
 ```sql
 SELECT id, email, created_at, email_confirmed_at 
 FROM auth.users 
-WHERE email IN (
-    'superadmin.modularauth@gmail.com',
-    'admin.modularauth@gmail.com'
-);
+WHERE email = 'superadmin.modularauth@gmail.com';
 ```
 
-You will receive the unique UUID for each account (e.g., `a1b2c3d4-e5f6-7890-abcd-ef1234567890`).
+Copy the returned UUID (e.g., `0192e21b-6cb7-7000-84a1-000000000001`).
 
-### Step 3: Assign the Platform Roles in `public.users`
-In the **Supabase SQL Editor** (running with Postgres superuser privileges):
-
-```sql
--- 1. Assign Super Administrator role
-UPDATE public.users
-SET platform_role = 'superadmin'
-WHERE id = '<SUPERADMIN_AUTH_USER_UUID>';
-
--- 2. Assign Administrator role
-UPDATE public.users
-SET platform_role = 'admin'
-WHERE id = '<ADMIN_AUTH_USER_UUID>';
-```
-
-> **Note**: The automated trigger `on_auth_user_created` (defined in `docs/DATABASE_SCHEMA.sql`) automatically creates a row in `public.users` when each user registers in `auth.users`, initialized with `platform_role = NULL`. The queries above assign the explicit administrative privileges.
-
-### Step 4: Verify Role Assignments
-Verify the assignments directly:
+### Step 3: Execute the Initial Superadmin Bootstrap
+In the **Supabase SQL Editor** (running under database administrator role `postgres`):
 
 ```sql
-SELECT id, email, platform_role, created_at 
-FROM public.users 
-WHERE email IN (
-    'superadmin.modularauth@gmail.com',
-    'admin.modularauth@gmail.com'
-);
+SELECT public.bootstrap_initial_superadmin('<SUPERADMIN_UUID>');
 ```
 
 Expected output:
-| email | platform_role |
-| :--- | :--- |
-| `superadmin.modularauth@gmail.com` | `superadmin` |
-| `admin.modularauth@gmail.com` | `admin` |
+```json
+{
+  "status": "SUCCESS",
+  "message": "Initial Super Administrator successfully provisioned",
+  "userId": "<SUPERADMIN_UUID>",
+  "email": "superadmin.modularauth@gmail.com",
+  "role": "superadmin"
+}
+```
+
+#### Verification of Permanent Bootstrap Lock:
+If you attempt to call `bootstrap_initial_superadmin` again:
+```sql
+SELECT public.bootstrap_initial_superadmin('<ANY_UUID>');
+```
+PostgreSQL will reject it with:
+```text
+ERROR: Bootstrap locked: A Super Administrator or Founder already exists. Subsequent role assignments must be performed by an authenticated Super Administrator through the API.
+```
+
+### Step 4: Retrieve the Admin Supabase UUID
+In the **Supabase SQL Editor**:
+
+```sql
+SELECT id, email, created_at, email_confirmed_at 
+FROM auth.users 
+WHERE email = 'admin.modularauth@gmail.com';
+```
+
+Copy the returned UUID for `admin.modularauth@gmail.com`.
+
+### Step 5: Assign the `admin` Role via Authenticated API
+Now that the initial Superadmin is bootstrapped, all subsequent platform role assignments are performed via the backend API with full audit logging:
+
+1. Log in as `superadmin.modularauth@gmail.com` using Supabase Auth to obtain an access token.
+2. Issue an authenticated `PATCH` request to the API:
+
+```http
+PATCH /api/v1/platform/users/<ADMIN_UUID>/role
+Host: localhost:4000
+Authorization: Bearer <SUPERADMIN_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+  "role": "admin"
+}
+```
+
+Expected response (`200 OK`):
+```json
+{
+  "message": "Platform role updated successfully for user <ADMIN_UUID>",
+  "targetUserId": "<ADMIN_UUID>",
+  "newRole": "admin"
+}
+```
 
 ---
 
-## 3. Runtime Verification via API
+## 3. Runtime Verification of Capabilities
 
-Once assigned, the API evaluates permissions upon every authenticated request:
+Once provisioned:
 
-1. **Superadmin Capabilities** (`superadmin`):
-   - Access to `/api/v1/platform/metrics` &rarr; `200 OK`
-   - Access to `/api/v1/platform/system-settings` &rarr; `200 OK`
-   - Granted permissions: `platform:manage_all`, `platform:manage_users`, `platform:view_system`, `platform:billing_audit`, `audit_log:view`.
-2. **Admin Capabilities** (`admin`):
-   - Access to `/api/v1/platform/metrics` &rarr; `200 OK`
-   - Access to `/api/v1/platform/system-settings` &rarr; `403 Forbidden` (only Superadmin/Founder has access)
-   - Granted permissions: `platform:manage_users`, `platform:view_system`, `platform:view_metrics`, `platform:support_access`, `audit_log:view`.
-3. **Ordinary Users** (`platform_role = NULL`):
-   - Access to any platform route &rarr; `403 Forbidden`.
+| User | Platform Role | Platform Metrics (`/api/v1/platform/metrics`) | System Settings (`/api/v1/platform/system-settings`) | Role Assignment (`PATCH /api/v1/platform/users/:id/role`) |
+| :--- | :--- | :--- | :--- | :--- |
+| `superadmin.modularauth@gmail.com` | `superadmin` | `200 OK` | `200 OK` | `200 OK` |
+| `admin.modularauth@gmail.com` | `admin` | `200 OK` | `403 Forbidden` | `403 Forbidden` |
+| Ordinary User | `null` | `403 Forbidden` | `403 Forbidden` | `403 Forbidden` |

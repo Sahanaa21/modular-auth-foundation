@@ -19,6 +19,12 @@ export interface IUserService {
     targetUserId: string,
     newRole: PlatformRole | null
   ): Promise<void>;
+
+  /**
+   * Atomic one-time bootstrap to assign the first superadmin when no superadmin exists.
+   * Locked permanently after the first superadmin is provisioned.
+   */
+  bootstrapSuperadmin(targetUserId: string): Promise<void>;
 }
 
 export interface SupabaseUserServiceOptions {
@@ -82,6 +88,19 @@ export class SupabaseUserService implements IUserService {
       throw new Error(`Database error updating platform role: ${error.message}`);
     }
   }
+
+  public async bootstrapSuperadmin(targetUserId: string): Promise<void> {
+    const { error } = await this.supabase.rpc('bootstrap_initial_superadmin', {
+      target_user_id: targetUserId,
+    });
+
+    if (error) {
+      if (error.message.includes('Bootstrap locked')) {
+        throw new AuthorizationError('Bootstrap locked: An initial Super Administrator or Founder already exists.');
+      }
+      throw new Error(`Database error bootstrapping initial superadmin: ${error.message}`);
+    }
+  }
 }
 
 /**
@@ -89,6 +108,7 @@ export class SupabaseUserService implements IUserService {
  */
 export class InMemoryUserService implements IUserService {
   private readonly users = new Map<string, { email: string; platformRole: PlatformRole | null }>();
+  private bootstrapLock = false;
 
   public setUser(userId: string, email: string, platformRole: PlatformRole | null = null): void {
     this.users.set(userId, { email, platformRole });
@@ -125,7 +145,38 @@ export class InMemoryUserService implements IUserService {
     });
   }
 
+  public async bootstrapSuperadmin(targetUserId: string): Promise<void> {
+    // Simulate atomic concurrency lock
+    while (this.bootstrapLock) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    this.bootstrapLock = true;
+
+    try {
+      const hasSuperadmin = Array.from(this.users.values()).some(
+        (u) => u.platformRole === 'superadmin' || u.platformRole === 'founder'
+      );
+
+      if (hasSuperadmin) {
+        throw new AuthorizationError('Bootstrap locked: An initial Super Administrator or Founder already exists.');
+      }
+
+      const record = this.users.get(targetUserId);
+      if (!record) {
+        throw new Error(`Target user ID '${targetUserId}' does not exist in users store.`);
+      }
+
+      this.users.set(targetUserId, {
+        ...record,
+        platformRole: 'superadmin',
+      });
+    } finally {
+      this.bootstrapLock = false;
+    }
+  }
+
   public clear(): void {
     this.users.clear();
+    this.bootstrapLock = false;
   }
 }
