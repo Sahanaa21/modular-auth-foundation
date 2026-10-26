@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "node --watch --loader ts-node/esm src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
@@ -28,6 +28,7 @@
     "@types/node": "^22.13.4",
     "@types/supertest": "^6.0.2",
     "supertest": "^7.0.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vitest": "^5.0.5"
   }
