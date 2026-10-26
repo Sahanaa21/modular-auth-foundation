@@ -5,6 +5,7 @@ import {
   AuthorizationEngine,
   PlatformRoles,
   AuthorizationError,
+  ConfigurationError,
 } from '@modular-auth/core';
 import { createApp } from '../src/app.js';
 import { MockTokenVerifier } from '../src/services/token-verifier.js';
@@ -306,6 +307,60 @@ describe('Administrative Provisioning & Bootstrap Suite', () => {
 
       expect(response.status).toBe(500);
       expect(response.body.error.code).toBe('INTERNAL_SERVER_ERROR');
+    });
+
+    it('returns 500 CONFIGURATION_ERROR when user profile cannot be resolved due to missing database credentials (fail-closed)', async () => {
+      const unconfiguredUserService = {
+        ...userService,
+        getUserProfile: async () => {
+          throw new ConfigurationError(
+            'Supabase client is not initialized: SUPABASE_SERVICE_ROLE_KEY is required to authoritatively load user roles from public.users.'
+          );
+        },
+        bootstrapSuperadmin: userService.bootstrapSuperadmin.bind(userService),
+        updatePlatformRole: userService.updatePlatformRole.bind(userService),
+      };
+
+      const unconfiguredApp = createApp({
+        tokenVerifier,
+        authzEngine,
+        orgService,
+        userService: unconfiguredUserService,
+        auditLogger,
+      });
+
+      const response = await request(unconfiguredApp)
+        .patch(`/api/v1/platform/users/${adminId}/role`)
+        .set('Authorization', `Bearer ${superadminToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe('CONFIGURATION_ERROR');
+      expect(response.body.error.message).toContain('SUPABASE_SERVICE_ROLE_KEY is required');
+    });
+
+    it('hydrates platform role from app_metadata when present in token claims', async () => {
+      const appMetaToken = 'token-with-app-metadata';
+      const appMetaSuperadminId = '00000000-0000-4000-8000-000000000888';
+      tokenVerifier.registerToken(appMetaToken, {
+        sub: appMetaSuperadminId,
+        email: 'appmeta.admin@example.com',
+        iss: 'https://example.supabase.co/auth/v1',
+        aud: 'authenticated',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        app_metadata: {
+          platform_role: 'superadmin',
+        },
+      });
+
+      const response = await request(app)
+        .patch(`/api/v1/platform/users/${adminId}/role`)
+        .set('Authorization', `Bearer ${appMetaToken}`)
+        .send({ role: 'admin' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.newRole).toBe('admin');
     });
   });
 });

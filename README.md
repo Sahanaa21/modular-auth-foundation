@@ -261,10 +261,29 @@ Detailed companion documentation is available in [`docs/`](docs/):
 
 ---
 
-## 10. Current Status & Known Boundaries
+## 10. Official Plugin & Modular Distribution
 
-- **Backend API (`@modular-auth/api`)**: Production-ready, fully tested (95 automated tests passing across workspaces).
+Modular Auth Foundation is packaged as an official, reusable plugin for the ArchScale ecosystem:
+- **`@modular-auth/core`**: Zero-dependency framework-agnostic TypeScript core library (RBAC, PBAC, permission matrix, domain error hierarchy).
+- **`@modular-auth/api`**: Production-ready Express middleware plugin. Provides `createModularAuthPlugin` for one-line mounting into any Node.js/Express service, plus granular middleware exports (`authenticate`, `requirePlatformRole`, `requireOrgMembership`, `requirePermission`, `securityHeaders`, `corsMiddleware`, `createRateLimiter`).
+
+```typescript
+import express from 'express';
+import { createModularAuthPlugin } from '@modular-auth/api';
+
+const app = express();
+app.use('/auth', createModularAuthPlugin({
+  supabaseUrl: process.env.SUPABASE_URL!,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+}));
+```
+
+---
+
+## 11. Current Status & Known Boundaries
+
+- **Backend API & Plugin (`@modular-auth/api`)**: Production-ready, fully tested (102 automated tests passing across workspaces).
 - **Core Library (`@modular-auth/core`)**: Zero dependencies outside zod, fully typed and tested.
-- **Frontend Client (`apps/web`)**: Standalone backend foundation; no frontend UI has been built to avoid superficial placeholders. Ready for any React/Vite/Next.js client using standard Supabase Auth SDK.
+- **Frontend Client (`apps/web`)**: Standalone backend foundation; ready for any React/Vite/Next.js client using standard Supabase Auth SDK.
 - **Production Secret Configuration**: When deploying to staging or production, ensure `SUPABASE_SERVICE_ROLE_KEY` is populated in the server environment so that database queries can authenticate against PostgREST.
 

@@ -70,12 +70,36 @@ const canDeleteProject = authEngine.hasOrgPermission(
 
 ## 3. Integrating Authentication & Middleware in Express
 
-### Setting Up Token Verification
+### Option A: One-Line Express Plugin Integration (Recommended)
+
+Mount Modular Auth Foundation into an existing Express application with zero boilerplate:
+
+```typescript
+import express from 'express';
+import { createModularAuthPlugin } from '@modular-auth/api';
+
+const app = express();
+
+const authPlugin = createModularAuthPlugin({
+  supabaseUrl: process.env.SUPABASE_URL!,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY, // Optional: for authoritative DB queries
+  corsOrigin: 'http://localhost:5173',
+});
+
+// Mount all security middleware, health, platform, and tenant routes
+app.use('/auth', authPlugin);
+```
+
+### Option B: Granular Middleware & Services Integration
+
+If your application has its own existing route architecture, you can import and compose individual middlewares and services directly:
+
+#### Setting Up Token Verification
 
 In your Express application, initialize the `SupabaseTokenVerifier`:
 
 ```typescript
-import { SupabaseTokenVerifier } from '@modular-auth/api/services/token-verifier';
+import { SupabaseTokenVerifier } from '@modular-auth/api';
 
 const tokenVerifier = new SupabaseTokenVerifier({
   supabaseUrl: process.env.SUPABASE_URL!, // e.g. https://xyz.supabase.co
@@ -88,30 +112,36 @@ const tokenClaims = await tokenVerifier.verifyToken(rawBearerToken);
 console.log(`Authenticated user ID: ${tokenClaims.sub}`);
 ```
 
-### Applying Authentication & Role Guards
+#### Applying Authentication & Role Guards
 
 ```typescript
 import express from 'express';
-import { createAuthenticateMiddleware } from '@modular-auth/api/middleware/authenticate';
-import { createRequireRoleMiddleware } from '@modular-auth/api/middleware/require-role';
-import { createRequireOrgMembershipMiddleware } from '@modular-auth/api/middleware/require-org-membership';
+import {
+  authenticate,
+  requirePlatformRole,
+  requireOrgMembership,
+  SupabaseUserService,
+} from '@modular-auth/api';
 
 const app = express();
+const userService = new SupabaseUserService({
+  supabaseUrl: process.env.SUPABASE_URL!,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+});
 
 // 1. Authenticate bearer token and resolve authoritative database profile
-const authenticate = createAuthenticateMiddleware({
+const authGuard = authenticate({
   tokenVerifier,
   userResolver: async (userId: string) => {
-    // Resolves authoritative platform_role from public.users
-    return await userService.findById(userId);
+    return await userService.getUserProfile(userId);
   }
 });
 
 // 2. Protect sensitive platform routes (Superadmin / Founder only)
 app.patch(
   '/api/v1/platform/users/:targetUserId/role',
-  authenticate,
-  createRequireRoleMiddleware(['superadmin', 'founder']),
+  authGuard,
+  requirePlatformRole(['superadmin', 'founder']),
   async (req, res) => {
     // Controller logic...
   }

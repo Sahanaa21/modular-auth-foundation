@@ -4,6 +4,7 @@ import {
   UserIdentity,
   AuthenticationError,
   PlatformRole,
+  isPlatformRole,
 } from '@modular-auth/core';
 
 export interface AuthenticateMiddlewareOptions {
@@ -32,12 +33,29 @@ export function authenticate(options: AuthenticateMiddlewareOptions): RequestHan
       // Cryptographically verify token signature and claims
       const claims = await options.tokenVerifier.verifyToken(token);
 
-      // Hydrate platform role from token claims or resolver
-      let platformRole = (claims['platform_role'] as PlatformRole) || null;
+      // 1. Initial platform role from token claims (top-level or app_metadata)
+      let platformRole: PlatformRole | null = null;
+      const rawClaimRole =
+        claims['platform_role'] ??
+        (typeof claims['app_metadata'] === 'object' && claims['app_metadata'] !== null
+          ? (claims['app_metadata'] as Record<string, unknown>)['platform_role'] ??
+            (claims['app_metadata'] as Record<string, unknown>)['role']
+          : undefined);
+
+      if (typeof rawClaimRole === 'string') {
+        const normalized = rawClaimRole.trim().toLowerCase();
+        const canonical = normalized === 'super_admin' ? 'superadmin' : normalized;
+        if (isPlatformRole(canonical)) {
+          platformRole = canonical;
+        }
+      }
+
+      // 2. Authoritative Database Hydration via userResolver (public.users)
       if (options.userResolver) {
         const userProfile = await options.userResolver(claims.sub);
-        if (userProfile?.platformRole) {
-          platformRole = userProfile.platformRole;
+        if (userProfile) {
+          // If a public.users profile exists, its platformRole is authoritative
+          platformRole = userProfile.platformRole ?? null;
         }
         console.info('[authenticate] Hydrated platform role for authenticated user:', {
           userId: claims.sub,

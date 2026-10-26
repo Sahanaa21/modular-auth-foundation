@@ -141,6 +141,60 @@ describe('SupabaseUserService Suite', () => {
         userService.getUserProfile('d6d1bbef-e141-4138-ac74-987070d05527')
       ).rejects.toThrow(/Database error resolving user profile: Invalid API key/);
     });
+
+    it('throws ConfigurationError when Supabase client is not initialized', async () => {
+      const unconfiguredService = new SupabaseUserService({
+        supabaseUrl,
+      });
+
+      await expect(
+        unconfiguredService.getUserProfile('d6d1bbef-e141-4138-ac74-987070d05527')
+      ).rejects.toThrow(ConfigurationError);
+    });
+
+    it('normalizes platform_role with whitespace, uppercase, or super_admin alias', async () => {
+      const mockClient = createMockSupabaseClient({
+        fromUsersSelect: async () => ({
+          data: {
+            id: 'd6d1bbef-e141-4138-ac74-987070d05527',
+            email: 'superadmin.modularauth@gmail.com',
+            platform_role: 'SuperAdmin ',
+          },
+          error: null,
+        }),
+      });
+
+      const userService = new SupabaseUserService({
+        supabaseUrl,
+        serviceRoleKey,
+        supabaseClient: mockClient,
+      });
+
+      const profile = await userService.getUserProfile('d6d1bbef-e141-4138-ac74-987070d05527');
+      expect(profile?.platformRole).toBe('superadmin');
+    });
+
+    it('maps super_admin alias to canonical superadmin role', async () => {
+      const mockClient = createMockSupabaseClient({
+        fromUsersSelect: async () => ({
+          data: {
+            id: 'd6d1bbef-e141-4138-ac74-987070d05527',
+            email: 'superadmin.modularauth@gmail.com',
+            platform_role: 'super_admin',
+          },
+          error: null,
+        }),
+      });
+
+      const userService = new SupabaseUserService({
+        supabaseUrl,
+        serviceRoleKey,
+        supabaseClient: mockClient,
+      });
+
+      const profile = await userService.getUserProfile('d6d1bbef-e141-4138-ac74-987070d05527');
+      expect(profile?.platformRole).toBe('superadmin');
+    });
   });
 
   describe('updatePlatformRole', () => {

@@ -54,9 +54,13 @@ export class SupabaseUserService implements IUserService {
 
   public async getUserProfile(userId: string): Promise<{ platformRole?: PlatformRole | null; email?: string } | null> {
     if (!this.supabase) {
-      console.warn('[userResolver] Supabase client is not configured (missing SUPABASE_SERVICE_ROLE_KEY).');
-      return null;
+      console.error('[userResolver] Cannot resolve platform role: Supabase client is not initialized (SUPABASE_SERVICE_ROLE_KEY is required).');
+      throw new ConfigurationError(
+        'Supabase client is not initialized: SUPABASE_SERVICE_ROLE_KEY is required to authoritatively load user roles from public.users.'
+      );
     }
+
+    console.info('[userResolver] Querying public.users for userId:', userId);
 
     const { data, error } = await this.supabase
       .from('users')
@@ -82,13 +86,28 @@ export class SupabaseUserService implements IUserService {
       return null;
     }
 
-    const platformRole = data.platform_role && isPlatformRole(data.platform_role)
-      ? (data.platform_role as PlatformRole)
-      : null;
+    console.info('[userResolver] Raw record fetched from public.users:', {
+      userId: data.id,
+      email: data.email,
+      rawPlatformRole: data.platform_role,
+    });
 
-    console.info('[userResolver] User profile resolved from public.users:', {
+    let platformRole: PlatformRole | null = null;
+    if (typeof data.platform_role === 'string') {
+      const normalized = data.platform_role.trim().toLowerCase();
+      const canonical = normalized === 'super_admin' ? 'superadmin' : normalized;
+      if (isPlatformRole(canonical)) {
+        platformRole = canonical;
+      } else {
+        console.warn('[userResolver] Unrecognized platform_role value in public.users:', {
+          userId,
+          rawRole: data.platform_role,
+        });
+      }
+    }
+
+    console.info('[userResolver] Resolved platform role for user:', {
       userId,
-      found: true,
       hasPlatformRole: Boolean(platformRole),
       platformRole: platformRole ?? 'none',
     });
