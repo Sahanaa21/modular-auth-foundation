@@ -42,7 +42,8 @@ const loadedEnvFiles: string[] = [];
 
 for (const envPath of candidateEnvFiles) {
   if (fs.existsSync(envPath) && !loadedEnvFiles.includes(envPath)) {
-    dotenv.config({ path: envPath, override: true });
+    // Preserve process.env variables injected by hosting platforms (e.g., Render's PORT)
+    dotenv.config({ path: envPath, override: false });
     loadedEnvFiles.push(envPath);
   }
 }

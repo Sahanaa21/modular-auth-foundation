@@ -65,6 +65,27 @@ const app = createApp({
   authRateLimitMax: env.AUTH_RATE_LIMIT_MAX_REQUESTS,
 });
 
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   console.log(`[API Server] Modular Auth API listening securely on port ${env.PORT} in ${env.NODE_ENV} mode`);
 });
+
+// Graceful shutdown handling for containerized platforms (Render, Docker, Kubernetes)
+const gracefulShutdown = (signal: string) => {
+  console.info(`[API Server] Received ${signal}. Initiating graceful shutdown...`);
+  server.close(() => {
+    console.info('[API Server] HTTP server closed cleanly. Exiting process.');
+    process.exit(0);
+  });
+
+  // Force close after 10 seconds if hanging connections exist
+  const forceTimer = setTimeout(() => {
+    console.error('[API Server] Forcing shutdown after timeout.');
+    process.exit(1);
+  }, 10000);
+
+  forceTimer.unref();
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
