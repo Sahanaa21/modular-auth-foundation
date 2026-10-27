@@ -112,3 +112,37 @@ export class NotFoundError extends AuthBaseError {
   }
 }
 
+/**
+ * Thrown when an endpoint or operation requires multi-factor authentication (AAL2),
+ * but the session only possesses single-factor (AAL1).
+ * Maps to HTTP 403 Forbidden.
+ */
+export class MFAVerificationRequiredError extends AuthBaseError {
+  public readonly statusCode = 403;
+  public readonly code = 'MFA_REQUIRED';
+
+  constructor(
+    message = 'Multi-factor authentication (AAL2) verification required for this operation',
+    details?: Record<string, unknown>
+  ) {
+    super(message, details);
+  }
+}
+
+/**
+ * Thrown when an account has not enrolled in mandatory MFA.
+ * Maps to HTTP 403 Forbidden.
+ */
+export class MFAEnrollmentRequiredError extends AuthBaseError {
+  public readonly statusCode = 403;
+  public readonly code = 'MFA_ENROLLMENT_REQUIRED';
+
+  constructor(
+    message = 'MFA enrollment is required before accessing this protected resource',
+    details?: Record<string, unknown>
+  ) {
+    super(message, details);
+  }
+}
+
+

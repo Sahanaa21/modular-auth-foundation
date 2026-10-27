@@ -38,12 +38,16 @@ export interface SecurityAuditEvent {
   readonly id?: string;
   /** Audit event classification */
   readonly eventType: AuditEventType;
+  /** Specific action or permission verb executed (e.g. 'platform:manage_users', 'member:invite') */
+  readonly action?: string;
   /** Timestamp when event occurred */
   readonly timestamp: Date;
   /** Identifier of the actor executing the action (user UUID or 'anonymous') */
   readonly actorId: string;
   /** Tenant organization context, if applicable */
   readonly organizationId?: string;
+  /** Workspace identifier, if applicable */
+  readonly workspaceId?: string;
   /** Target resource identifier (e.g., project ID, user ID, invoice ID) */
   readonly resourceId?: string;
   /** Type of target resource */
@@ -52,6 +56,9 @@ export interface SecurityAuditEvent {
   readonly outcome: 'SUCCESS' | 'FAILURE' | 'DENIED' | 'ERROR';
   /** Reason or error code for failures/denials */
   readonly reason?: string;
+  /** Request or correlation identifier for distributed tracing */
+  readonly requestId?: string;
+  readonly correlationId?: string;
   /** Client IP address (masked/hashed where privacy rules dictate) */
   readonly ipAddress?: string;
   /** Client User-Agent string */

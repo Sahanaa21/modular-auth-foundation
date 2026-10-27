@@ -252,20 +252,24 @@ curl -X PATCH 'http://localhost:4000/api/v1/platform/users/a800ea5c-667a-424a-aa
 
 ## 9. Integration & Architectural Documentation
 
-Detailed companion documentation is available in [`docs/`](docs/):
+Detailed companion documentation is available in [`docs/`](docs/) and the project root:
+- [Handover Package for Founder Shanker](HANDOVER.md): Account inventory, credential transfer checklist, deployment coordinates, and maintenance instructions.
+- [API Reference](docs/API_REFERENCE.md): Technical specification of all endpoints, parameters, MFA requirements, and error payloads.
 - [Architecture Specification](docs/ARCHITECTURE.md): Component interactions, trust boundaries, and authorization algorithms.
 - [Integration Guide](docs/INTEGRATION_GUIDE.md): How external Node.js, Express, and React applications consume `@modular-auth/core` and `@modular-auth/api`.
 - [Security Model & Threat Boundaries](docs/SECURITY_MODEL.md): Threat vectors, mitigations, and defense-in-depth guarantees.
 - [Administrative Account Provisioning](docs/ADMIN_PROVISIONING.md): Step-by-step superadmin bootstrap procedure.
 - [Database Security Review](docs/SECURITY_REVIEW_DATABASE.md): PostgreSQL triggers, RLS policies, and advisory locking audit.
+- [Production Deployment Guide](DEPLOYMENT_GUIDE.md): Render setup, zero-downtime health probes, and troubleshooting.
+- [Consumer Reference Implementation](examples/consumer-express-app.ts): Complete runnable Express application consuming the modular plugin.
 
 ---
 
 ## 10. Official Plugin & Modular Distribution
 
 Modular Auth Foundation is packaged as an official, reusable plugin for the ArchScale ecosystem:
-- **`@modular-auth/core`**: Zero-dependency framework-agnostic TypeScript core library (RBAC, PBAC, permission matrix, domain error hierarchy).
-- **`@modular-auth/api`**: Production-ready Express middleware plugin. Provides `createModularAuthPlugin` for one-line mounting into any Node.js/Express service, plus granular middleware exports (`authenticate`, `requirePlatformRole`, `requireOrgMembership`, `requirePermission`, `securityHeaders`, `corsMiddleware`, `createRateLimiter`).
+- **`@modular-auth/core`**: Zero-dependency framework-agnostic TypeScript core library (RBAC, PBAC, permission matrix, domain error hierarchy, identity/MFA/audit contracts).
+- **`@modular-auth/api`**: Production-ready Express middleware plugin. Provides `createModularAuthPlugin` for one-line mounting into any Node.js/Express service, plus granular middleware exports (`authenticate`, `requirePlatformRole`, `requireOrgMembership`, `requireTenantMembership`, `requirePermission`, `requireMFA`, `securityHeaders`, `corsMiddleware`, `createRateLimiter`).
 
 ```typescript
 import express from 'express';
@@ -282,8 +286,10 @@ app.use('/auth', createModularAuthPlugin({
 
 ## 11. Current Status & Known Boundaries
 
-- **Backend API & Plugin (`@modular-auth/api`)**: Production-ready, fully tested (102 automated tests passing across workspaces).
+- **Backend API & Plugin (`@modular-auth/api`)**: Production-ready, fully tested (123 automated tests passing across workspaces).
 - **Core Library (`@modular-auth/core`)**: Zero dependencies outside zod, fully typed and tested.
-- **Frontend Client (`apps/web`)**: Standalone backend foundation; ready for any React/Vite/Next.js client using standard Supabase Auth SDK.
-- **Production Secret Configuration**: When deploying to staging or production, ensure `SUPABASE_SERVICE_ROLE_KEY` is populated in the server environment so that database queries can authenticate against PostgREST.
+- **MFA Assurance Framework**: Implemented backend contracts and middleware enforcing `aal2` for sensitive operations.
+- **Tenant & Workspace Boundary**: Full isolation with support for organization-scoped and workspace-scoped applications.
+- **Audit Persistence**: Fail-safe logging to `public.audit_logs` with automatic secret redaction.
+- **Production Secret Configuration**: Configured and deployed on Render with health checks passing. When deploying additional environments, configure `SUPABASE_SERVICE_ROLE_KEY` in Render environment secrets.
 

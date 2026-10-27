@@ -58,7 +58,7 @@ export class ConsoleAuditLogger implements IAuditLogger {
     if (event.outcome === 'FAILURE' || event.outcome === 'DENIED' || event.outcome === 'ERROR') {
       console.warn(logLine);
     } else {
-      console.log(logLine);
+      console.info(logLine);
     }
   }
 }
@@ -68,6 +68,10 @@ export class ConsoleAuditLogger implements IAuditLogger {
  */
 export class InMemoryAuditLogger implements IAuditLogger {
   public readonly events: SecurityAuditEvent[] = [];
+
+  public getEvents(): readonly SecurityAuditEvent[] {
+    return this.events;
+  }
 
   public async logEvent(event: SecurityAuditEvent): Promise<void> {
     this.events.push({

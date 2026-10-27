@@ -4,6 +4,8 @@ export * from './types/permissions.js';
 export * from './types/auth.js';
 export * from './types/context.js';
 export * from './types/audit.js';
+export * from './types/mfa.js';
+
 
 // Configuration & Default Matrices
 export * from './config/permissions-matrix.js';

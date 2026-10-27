@@ -5,6 +5,7 @@ import {
   IAuditLogger,
   ITokenVerifier,
   IOrganizationService,
+  IMFAProvider,
 } from '@modular-auth/core';
 import { createApp } from './app.js';
 import type { AppDependencies } from './app.js';
@@ -13,12 +14,15 @@ import { SupabaseUserService, InMemoryUserService } from './services/user-servic
 import type { IUserService } from './services/user-service.js';
 import { SupabaseOrganizationService } from './services/organization-service.js';
 import { ConsoleAuditLogger, InMemoryAuditLogger } from './services/audit-logger.js';
+import { SupabaseAuditLogger } from './services/supabase-audit-logger.js';
+import { SupabaseMFAProvider, InMemoryMFAProvider } from './services/mfa-service.js';
 
 // Re-export middleware for consumers building custom route pipelines
 export { authenticate } from './middleware/authenticate.js';
 export { requirePlatformRole } from './middleware/require-role.js';
-export { requireOrgMembership } from './middleware/require-org-membership.js';
+export { requireOrgMembership, requireTenantMembership } from './middleware/require-org-membership.js';
 export { requirePermission } from './middleware/require-permission.js';
+export { requireMFA } from './middleware/require-mfa.js';
 export { securityHeaders } from './middleware/security-headers.js';
 export { corsMiddleware } from './middleware/cors.js';
 export { createRateLimiter } from './middleware/rate-limiter.js';
@@ -34,9 +38,12 @@ export {
   SupabaseOrganizationService,
   ConsoleAuditLogger,
   InMemoryAuditLogger,
+  SupabaseAuditLogger,
+  SupabaseMFAProvider,
+  InMemoryMFAProvider,
   createApp,
 };
-export type { IUserService, AppDependencies };
+export type { IUserService, AppDependencies, IMFAProvider };
 
 /**
  * Configuration options for the Modular Auth Express Plugin.
@@ -60,6 +67,8 @@ export interface ModularAuthPluginOptions {
   readonly authzEngine?: IAuthorizationEngine;
   /** Custom token verifier override */
   readonly tokenVerifier?: ITokenVerifier;
+  /** Custom MFA provider override */
+  readonly mfaProvider?: IMFAProvider;
   /** Rate limit window in milliseconds */
   readonly rateLimitWindowMs?: number;
   /** Global rate limit max requests per window */
@@ -103,7 +112,11 @@ export function createModularAuthPlugin(options: ModularAuthPluginOptions) {
     });
 
   const authzEngine = options.authzEngine ?? new AuthorizationEngine();
-  const auditLogger = options.auditLogger ?? new ConsoleAuditLogger();
+  const auditLogger =
+    options.auditLogger ??
+    (supabaseClient
+      ? new SupabaseAuditLogger({ supabaseClient, fallbackLogger: new ConsoleAuditLogger() })
+      : new ConsoleAuditLogger());
 
   const userService =
     options.userService ??
@@ -121,12 +134,19 @@ export function createModularAuthPlugin(options: ModularAuthPluginOptions) {
       supabaseClient,
     });
 
+  const mfaProvider =
+    options.mfaProvider ??
+    new SupabaseMFAProvider({
+      supabaseClient,
+    });
+
   return createApp({
     tokenVerifier,
     authzEngine,
     orgService,
     userService,
     auditLogger,
+    mfaProvider,
     corsOrigin: options.corsOrigin,
     rateLimitWindowMs: options.rateLimitWindowMs,
     rateLimitMax: options.rateLimitMax,

@@ -5,6 +5,8 @@ import { ConsoleAuditLogger } from './services/audit-logger.js';
 import { AuthorizationEngine } from '@modular-auth/core';
 import { SupabaseUserService } from './services/user-service.js';
 import { SupabaseOrganizationService } from './services/organization-service.js';
+import { SupabaseAuditLogger } from './services/supabase-audit-logger.js';
+import { SupabaseMFAProvider } from './services/mfa-service.js';
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -38,7 +40,10 @@ const tokenVerifier = new SupabaseTokenVerifier({
 });
 
 const authzEngine = new AuthorizationEngine();
-const auditLogger = new ConsoleAuditLogger();
+const auditLogger = new SupabaseAuditLogger({
+  supabaseClient,
+  fallbackLogger: new ConsoleAuditLogger(),
+});
 
 // Instantiate database services connected to Supabase PostgreSQL
 const userService = new SupabaseUserService({
@@ -53,12 +58,17 @@ const orgService = new SupabaseOrganizationService({
   supabaseClient,
 });
 
+const mfaProvider = new SupabaseMFAProvider({
+  supabaseClient,
+});
+
 const app = createApp({
   tokenVerifier,
   authzEngine,
   orgService,
   userService,
   auditLogger,
+  mfaProvider,
   corsOrigin: env.CORS_ORIGIN,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,
   rateLimitMax: env.RATE_LIMIT_MAX_REQUESTS,

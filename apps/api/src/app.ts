@@ -8,6 +8,7 @@ import {
   StandardPermissions,
   PlatformRoles,
   AuthorizationError,
+  IMFAProvider,
 } from '@modular-auth/core';
 import { securityHeaders } from './middleware/security-headers.js';
 import { corsMiddleware } from './middleware/cors.js';
@@ -16,6 +17,7 @@ import { authenticate } from './middleware/authenticate.js';
 import { requirePlatformRole } from './middleware/require-role.js';
 import { requireOrgMembership } from './middleware/require-org-membership.js';
 import { requirePermission } from './middleware/require-permission.js';
+import { requireMFA } from './middleware/require-mfa.js';
 import { validateRequest } from './middleware/validate-request.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { IUserService } from './services/user-service.js';
@@ -26,6 +28,7 @@ export interface AppDependencies {
   readonly orgService: IOrganizationService;
   readonly auditLogger: IAuditLogger;
   readonly userService?: IUserService;
+  readonly mfaProvider?: IMFAProvider;
   readonly corsOrigin?: string;
   readonly rateLimitWindowMs?: number;
   readonly rateLimitMax?: number;
@@ -141,6 +144,21 @@ export function createApp(dependencies: AppDependencies): Express {
         scope: 'platform',
         maintenanceMode: false,
         version: '1.0.0',
+      });
+    }
+  );
+
+  // Privileged route requiring Step-Up Multi-Factor Authentication (AAL2)
+  app.post(
+    '/api/v1/platform/sensitive-operation',
+    authMiddleware,
+    requirePlatformRole([PlatformRoles.SUPER_ADMIN, PlatformRoles.FOUNDER]),
+    requireMFA({ requiredLevel: 'aal2' }),
+    (req, res) => {
+      res.status(200).json({
+        message: 'Step-up MFA verified successfully. Privileged operation executed.',
+        assuranceLevel: req.mfa?.currentLevel,
+        amr: req.mfa?.amr,
       });
     }
   );
